@@ -2,24 +2,25 @@
 
 A secure command-line password manager built with Python, SQLite, and Fernet encryption.
 
-This project stores account credentials in an SQLite database while encrypting passwords before they are saved. A master password is required to access the vault, and only its SHA-256 hash is stored in the database.
+Passwords are encrypted before being stored in an SQLite database. A master password is required to access the vault — only its bcrypt hash is stored, never the password itself.
 
 ## Features
 
-* Create and verify a master password
-* Store encrypted passwords securely
-* View saved credentials
-* Search passwords by website
-* Delete saved passwords
-* Automatic database creation on first run
-* Automatic encryption key generation
-* Input validation for user entries
+- Create and verify a master password (hashed with bcrypt)
+- Store encrypted passwords securely using Fernet
+- View all saved credentials
+- Search passwords by website (case-insensitive)
+- Delete passwords by ID (safe when multiple accounts exist for the same website)
+- Hidden input for both master and stored passwords via `getpass`
+- Automatic database and encryption key generation on first run
+- Input validation throughout
 
 ## Tech Stack
 
-* Python
-* SQLite
-* Cryptography (Fernet)
+- Python
+- SQLite
+- cryptography (Fernet)
+- bcrypt
 
 ## Project Structure
 
@@ -28,75 +29,48 @@ password-manager/
 ├── password_manager.py
 ├── requirements.txt
 ├── .gitignore
-├── README.md
-├── vault.db        # Generated automatically
-└── secret.key      # Generated automatically
+└── README.md
 ```
 
-> `vault.db` and `secret.key` are excluded from Git using `.gitignore`.
+> `vault.db` and `secret.key` are generated on first run and excluded from Git via `.gitignore`.
 
 ## Installation
 
-Clone the repository:
-
 ```bash
 git clone https://github.com/Ujjwal-nayan/password-manager.git
-```
-
-Move into the project directory:
-
-```bash
 cd password-manager
-```
-
-Install the required dependency:
-
-```bash
 pip install -r requirements.txt
-```
-
-Run the application:
-
-```bash
 python password_manager.py
 ```
 
-On the first run, the application automatically creates:
-
-* `vault.db`
-* `secret.key`
-
-and prompts you to create a master password.
+On first run, the app automatically creates `vault.db` and `secret.key`, then prompts you to set a master password.
 
 ## Security Notes
 
-* The master password is stored as a SHA-256 hash.
-* Account passwords are encrypted using Fernet before being saved.
-* Password input is hidden using `getpass`.
-* The encryption key and database are ignored by Git and remain local.
+- Master password is hashed with **bcrypt** (slow by design, resistant to brute force)
+- Stored passwords are encrypted with **Fernet** symmetric encryption before saving
+- All password input is hidden using `getpass` — nothing is visible on screen while typing
+- `vault.db` and `secret.key` never leave your machine (excluded from Git)
+- **Important:** Keep `secret.key` backed up separately. If it is lost, your stored passwords cannot be recovered.
 
 ## What I Learned
 
-This project helped me understand:
-
-* SQLite database operations
-* Parameterized SQL queries
-* Password hashing
-* Symmetric encryption with Fernet
-* Authentication flow
-* Input validation
-* Organizing a larger Python project
+- SQLite database operations and parameterized queries
+- Password hashing with bcrypt vs plain SHA-256 (and why it matters)
+- Symmetric encryption with Fernet
+- Authentication flow for a local vault
+- Safe deletion by primary key to avoid bulk deletes
+- Secure input handling with `getpass`
 
 ## Future Improvements
 
-* Edit existing passwords
-* Generate strong passwords
-* Password strength checker
-* Export and import vault
-* GUI or web interface
+- Edit existing passwords
+- Random strong password generator
+- Password strength checker
+- Export / import vault
+- GUI or web interface
 
 ## Author
 
-**Ujjwal Nayan**
-
+**Ujjwal Nayan**  
 GitHub: https://github.com/Ujjwal-nayan
