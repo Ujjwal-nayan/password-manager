@@ -1,6 +1,6 @@
 import os
 import sqlite3
-import hashlib
+import bcrypt
 from getpass import getpass
 from cryptography.fernet import Fernet
 
@@ -12,7 +12,6 @@ KEY_FILE = os.path.join(BASE_DIR, "secret.key")
 db_exists = os.path.exists(DB_FILE)
 key_exists = os.path.exists(KEY_FILE)
 
-# First run: create a new key
 if not key_exists:
     if db_exists:
         print("❌ Error: secret.key is missing.")
@@ -48,16 +47,14 @@ CREATE TABLE IF NOT EXISTS passwords(
 
 conn.commit()
 
-# print("Database initialized!")
-
 cursor.execute("SELECT * FROM master")
-
 master = cursor.fetchone()
 
 if master is None:
     password = getpass("Create master password: ")
 
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    # bcrypt: slow by design, resistant to brute force
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     cursor.execute(
         "INSERT INTO master(password_hash) VALUES(?)",
@@ -71,47 +68,38 @@ if master is None:
 else:
     password = getpass("Enter master password: ")
 
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-
-    if password_hash != master[1]:
+    if not bcrypt.checkpw(password.encode(), master[1].encode()):
         print("❌ Wrong password.")
         conn.close()
         exit()
 
     print("✅ Access granted.\n")
 
+
 def add_password():
     while True:
         website = input("Website: ").strip()
-
-        if website != "":
+        if website:
             break
-
         print("Website cannot be empty.")
 
     while True:
         username = input("Username: ").strip()
-
-        if username != "":
+        if username:
             break
-
         print("Username cannot be empty.")
 
     while True:
-        password = input("Password: ").strip()
-
-        if password != "":
+        # getpass hides input — passwords shouldn't be visible on screen
+        password = getpass("Password: ").strip()
+        if password:
             break
-
         print("Password cannot be empty.")
 
     encrypted_password = cipher.encrypt(password.encode()).decode()
 
     cursor.execute(
-        """
-        INSERT INTO passwords(website, username, encrypted_password)
-        VALUES(?, ?, ?)
-        """,
+        "INSERT INTO passwords(website, username, encrypted_password) VALUES(?, ?, ?)",
         (website, username, encrypted_password)
     )
 
@@ -119,9 +107,9 @@ def add_password():
 
     print("✅ Password saved.")
 
+
 def view_passwords():
     cursor.execute("SELECT * FROM passwords")
-
     passwords = cursor.fetchall()
 
     if not passwords:
@@ -130,81 +118,98 @@ def view_passwords():
 
     print()
 
-    for password in passwords:
-        decrypted_password = cipher.decrypt(
-            password[3].encode()
-        ).decode()
+    for row in passwords:
+        decrypted_password = cipher.decrypt(row[3].encode()).decode()
 
-        print(f"ID       : {password[0]}")
-        print(f"Website  : {password[1]}")
-        print(f"Username : {password[2]}")
+        print(f"ID       : {row[0]}")
+        print(f"Website  : {row[1]}")
+        print(f"Username : {row[2]}")
         print(f"Password : {decrypted_password}")
         print("-" * 30)
+
 
 def search_password():
     while True:
         website = input("Website: ").strip()
-
-        if website != "":
+        if website:
             break
-
         print("Website cannot be empty.")
 
+    # case-insensitive search
     cursor.execute(
-        "SELECT * FROM passwords WHERE website = ?",
+        "SELECT * FROM passwords WHERE LOWER(website) = LOWER(?)",
         (website,)
     )
 
-    password = cursor.fetchone()
+    results = cursor.fetchall()
 
-    if password is None:
-        print("Password not found.")
+    if not results:
+        print("No passwords found for that website.")
         return
 
-    decrypted_password = cipher.decrypt(
-        password[3].encode()
-    ).decode()
+    print()
 
-    print(f"\nWebsite  : {password[1]}")
-    print(f"Username : {password[2]}")
-    print(f"Password : {decrypted_password}")
+    for row in results:
+        decrypted_password = cipher.decrypt(row[3].encode()).decode()
+
+        print(f"ID       : {row[0]}")
+        print(f"Website  : {row[1]}")
+        print(f"Username : {row[2]}")
+        print(f"Password : {decrypted_password}")
+        print("-" * 30)
+
 
 def delete_password():
     while True:
         website = input("Website to delete: ").strip()
-
-        if website != "":
+        if website:
             break
-
         print("Website cannot be empty.")
 
+    # case-insensitive search
     cursor.execute(
-        "SELECT * FROM passwords WHERE website = ?",
+        "SELECT * FROM passwords WHERE LOWER(website) = LOWER(?)",
         (website,)
     )
 
-    password = cursor.fetchone()
+    results = cursor.fetchall()
 
-    if password is None:
-        print("Password not found.")
+    if not results:
+        print("No passwords found for that website.")
         return
 
-    confirm = input(f"Delete password for {website}? (y/n): ").strip().lower()
+    # if multiple accounts exist for the same website, show all and ask for ID
+    if len(results) > 1:
+        print(f"\nMultiple entries found for '{website}':")
+        for row in results:
+            print(f"  ID {row[0]} — Username: {row[1]}")
+
+        while True:
+            try:
+                entry_id = int(input("Enter ID to delete: ").strip())
+                if any(row[0] == entry_id for row in results):
+                    break
+                print("Invalid ID.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        entry_id = results[0][0]
+
+    confirm = input(f"Delete entry ID {entry_id} for '{website}'? (y/n): ").strip().lower()
 
     if confirm == "y":
-        cursor.execute(
-            "DELETE FROM passwords WHERE website = ?",
-            (website,)
-        )
-
+        # delete by id, not by website — avoids deleting multiple entries
+        cursor.execute("DELETE FROM passwords WHERE id = ?", (entry_id,))
         conn.commit()
-
         print("✅ Password deleted.")
     else:
         print("Cancelled.")
 
-while True:
-    print("""
+
+if __name__ == "__main__":
+    try:
+        while True:
+            print("""
 ===== PASSWORD MANAGER =====
 1. Add Password
 2. View Passwords
@@ -213,26 +218,22 @@ while True:
 5. Exit
 ============================
 """)
+            choice = input("Enter choice: ").strip()
 
-    choice = input("Enter choice: ").strip()
+            if choice == "1":
+                add_password()
+            elif choice == "2":
+                view_passwords()
+            elif choice == "3":
+                search_password()
+            elif choice == "4":
+                delete_password()
+            elif choice == "5":
+                print("Goodbye!")
+                break
+            else:
+                print("Invalid choice.")
 
-    if choice == "1":
-        add_password()
-
-    elif choice == "2":
-        view_passwords()
-
-    elif choice == "3":
-        search_password()
-
-    elif choice == "4":
-        delete_password()
-
-    elif choice == "5":
-        print("Goodbye!")
-        break
-
-    else:
-        print("Invalid choice.")
-
-conn.close()
+    finally:
+        # always closes cleanly, even on Ctrl+C or crash
+        conn.close()
